@@ -13,13 +13,14 @@ library("graphics")
 library("TTR")
 library("TSA")
 library(rio)
+library(dplyr)
 library(ggplot2)
 ```
 
 # Import Data
 
 ```{r}
-data <- read.csv("C:/Users/bilal/Downloads/Data River Aire Discharge - Sheet1.csv")
+data <- import("https://raw.githubusercontent.com/yehezkinovandri/mpdw/7975608dd9ec5128c86261ea6c5a6c2d183fb17f/Pertemuan%201/daily-website-visitors.csv")
 
 head(data)
 ```
@@ -30,9 +31,20 @@ Karena kolom Date masih bertipe character, maka perlu diubah ke tipe Date
 library(lubridate)
 
 # ubah dari character ke Date
-data$Date <- dmy(data$Date)
+data$Date <- mdy(data$Date)
 ```
 
+Karena kolom Page.Loads masih bertipe character, maka perlu diubah ke tipe Numeric
+
+```{r}
+data$Page.Loads <- as.numeric(gsub(",", "", data$Page.Loads))
+```
+
+Hanya mengambil kolom Date dan Page.Loads
+
+```{r}
+data <- data %>% select(Date, Page.Loads)
+```
 
 Ambil 100 baris dari dataset
 
@@ -55,7 +67,8 @@ missing_dates
 Mengubah data agar terbaca sebagai data deret waktu dengan fungsi 
 
 ```{r}
-data.ts <- ts(data$Discharge)
+data.ts <- ts(data$Page.Loads)
+data.ts
 ```
 
 Menampilkan ringkasan data
@@ -67,12 +80,12 @@ summary(data.ts)
 Menampilkan plot data deret waktu
 
 ```{r}
-ts.plot(data.ts, xlab="Time Period ", ylab="Reading", 
+ts.plot(data.ts, xlab="Time Period ", ylab="Page Loads", 
         main = "Time Series Plot")
 points(data.ts)
 ```
 
-Data memiliki lonjakan lonjakan yang tdak stabil sehingga cocok dengan Single Moving Average (SMA) dan Single Exponential Smoothing (SES)
+Data memiliki lonjakan-lonjakan yang dapat diidentifikasi seperti Seasonal sehingga cocok dengan Single Moving Average (SMA) dan Single Exponential Smoothing (SES)
 
  
 # SIngle Moving Average (SMA)
@@ -92,8 +105,8 @@ training_ma <- data[1:n_train, ]
 testing_ma  <- data[(n_train+1):n, ]
 
 # ubah ke time series
-train_ma.ts <- ts(training_ma$Discharge)
-test_ma.ts  <- ts(testing_ma$Discharge)
+train_ma.ts <- ts(training_ma$Page.Loads)
+test_ma.ts  <- ts(testing_ma$Page.Loads)
 ```
 
 Plot data latih
@@ -116,9 +129,9 @@ Plot seluruh data
 
 ```{r}
 ggplot() + 
-  geom_line(data = training_ma, aes(x = Date, y = Discharge, col = "Data Latih")) +
-  geom_line(data = testing_ma, aes(x = Date, y = Discharge, col = "Data Uji")) +
-  labs(x = "Date", y = "Discharge", color = "Legend") +
+  geom_line(data = training_ma, aes(x = Date, y = Page.Loads, col = "Data Latih")) +
+  geom_line(data = testing_ma, aes(x = Date, y = Page.Loads, col = "Data Uji")) +
+  labs(x = "Date", y = "Page Loads", color = "Legend") +
    scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
                       values = c("blue", "red")) + 
   theme_bw() + theme(legend.position = "bottom",
@@ -145,7 +158,7 @@ data.gab #forecast 24 periode ke depan
 ```
 
 ```{r}
-ts.plot(data.ts, xlab="Date", ylab="Discharge", main= "SMA N=4 Data Sales")
+ts.plot(data.ts, xlab="Date", ylab="Page Loads", main= "SMA N=4 Data Sales")
 points(data.ts)
 lines(data.gab[,2],col="green",lwd=2)
 lines(data.gab[,3],col="red",lwd=2)
@@ -209,8 +222,8 @@ training <- data[1:n_train, ]
 testing  <- data[(n_train+1):n, ]
 
 # ubah ke time series
-train.ts <- ts(training$Discharge)
-test.ts  <- ts(testing$Discharge)
+train.ts <- ts(training$Page.Loads)
+test.ts  <- ts(testing$Page.Loads)
 ```
 
 Plot data train
@@ -231,9 +244,9 @@ Plot seluruh data
 
 ```{r}
 ggplot() + 
-  geom_line(data = training, aes(x = Date, y = Discharge, col = "Data Latih")) +
-  geom_line(data = testing, aes(x = Date, y = Discharge, col = "Data Uji")) +
-  labs(x = "Date", y = "Tota Sales", color = "Legend") +
+  geom_line(data = training, aes(x = Date, y = Page.Loads, col = "Data Latih")) +
+  geom_line(data = testing, aes(x = Date, y = Page.Loads, col = "Data Uji")) +
+  labs(x = "Date", y = "Page Loads", color = "Legend") +
   scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
                       values = c("blue", "red")) + 
   theme_bw() + theme(legend.position = "bottom",
@@ -256,7 +269,7 @@ ses.2
 ```{r}
 autoplot(ses.1) +
   autolayer(fitted(ses.1), series="Fitted") +
-  ylab("Discharge") + xlab("Date")
+  ylab("Page Loads") + xlab("Date")
 ```
 
 ```{r}
@@ -334,9 +347,9 @@ akurasi2
 n_test <- nrow(testing)
 
 # error (ramalan - aktual), samakan panjang dan tipe numeric
-e1   <- as.numeric(ramalan1$mean)[1:n_test] - as.numeric(testing$Discharge)
-e2   <- as.numeric(ramalan2$mean)[1:n_test] - as.numeric(testing$Discharge)
-eopt <- as.numeric(ramalanopt$mean)[1:n_test] - as.numeric(testing$Discharge)
+e1   <- as.numeric(ramalan1$mean)[1:n_test] - as.numeric(testing$Page.Loads)
+e2   <- as.numeric(ramalan2$mean)[1:n_test] - as.numeric(testing$Page.Loads)
+eopt <- as.numeric(ramalanopt$mean)[1:n_test] - as.numeric(testing$Page.Loads)
 
 # SSE / MSE / RMSE untuk masing-masing model (abaikan NA)
 SSEtesting1  <- sum(e1^2,  na.rm = TRUE)
@@ -377,9 +390,9 @@ Hasilnya sama, MSE1 > MSE2, artinya model 2 lebih baik daripada model 1
 akurasitesting_RMSE
 ```
 
-Hasilnya sama, RMSE1 > RMSE2, artinya model 2 lebih baik daripada model 1 dengan rata-rata error per prediksi sekitar 44.
+Hasilnya sama, RMSE1 > RMSE2, artinya model 2 lebih baik daripada model 1 dengan rata-rata error per prediksi sekitar 852 Page Loads.
 
-Model 1 jauh lebih buruk (error rata-rata sekitar 52).
+Model 1 jauh lebih buruk (error rata-rata sekitar 950).
 
 # Kesimpulan
 
@@ -389,4 +402,4 @@ Model 1 jelas lebih buruk (SSE, MSE, RMSE lebih besar).
 
 Model optimal (SSEopt/MSEopt/RMSEopt) hampir sama dengan Model 2, artinya tuning parameter tidak banyak memperbaiki performa → Model 2 sudah cukup baik.
 
-Dari sudut pandang praktis, model terbaik menghasilkan error rata-rata sekitar 44 debit aliran sungai (Discharge) per periode.
+Dari sudut pandang praktis, model terbaik menghasilkan error rata-rata sekitar 852 Page Loads per periode.
