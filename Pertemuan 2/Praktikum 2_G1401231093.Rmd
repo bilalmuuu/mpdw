@@ -118,7 +118,7 @@ Plot seluruh data
 ggplot() + 
   geom_line(data = training_ma, aes(x = Date, y = Discharge, col = "Data Latih")) +
   geom_line(data = testing_ma, aes(x = Date, y = Discharge, col = "Data Uji")) +
-  labs(x = "Date", y = "Total Sales", color = "Legend") +
+  labs(x = "Date", y = "Discharge", color = "Legend") +
    scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
                       values = c("blue", "red")) + 
   theme_bw() + theme(legend.position = "bottom",
