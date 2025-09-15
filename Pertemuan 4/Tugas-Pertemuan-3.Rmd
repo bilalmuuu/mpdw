@@ -1,0 +1,501 @@
+---
+title: "Tugas Praktikum 4 MPDW"
+author: "Bilal Muhammad Thalib (G1401231093)"
+date: "2025-09-15"
+output: html_document
+---
+
+# Brief Tugass
+
+Pagi teman-teman, gw akan rincikan untuk tugas MPDW Praktikum 4 kemarin. Tugasnya adalah melakukan pemodelan time series terhadap peubah Y (AQI) dan peubah X, satu saja bebas disertai alasannya (bisa dari cek korelasi, jurnal, dsb). Langkah pemodelannya:
+- Pemilihan peubah X dan Y
+- Eksplorasi Data
+- Pengecekan asumsi autokorelasi maupun asumsi lainnya
+- Wajib untuk membuat 3 model (Koyck, Distributed Lag, Autoregressive)
+- Lakukan evaluasi dan perbandingan performa masing-masing model.
+
+## Import Library & Data
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(corrplot)
+library(forecast)
+library(graphics)
+library(TTR)
+library(TSA)
+library(lmtest)
+library(orcutt)
+library(HoRM)
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+```
+
+```{r}
+# Load the dataset
+data <- read_csv("C:/Users/bilal/Downloads/NewDelhi_Air_quality.csv")
+head(data)
+```
+
+## Pemilihan Peubah X dan Y
+
+```{r}
+# Pemilihan kolom yang akan digunakan
+data_cor <- data %>%
+  select("AQI", "CO", "no2", "o3", "pm10", "pm25", "so2")
+head(data)
+```
+
+```{r}
+# 3. Hitung matriks korelasi Pearson
+cor_matrix <- cor(data_cor, use = "complete.obs", method = "pearson")
+
+corrplot(cor_matrix, method = "color", type = "upper", tl.cex = 0.8, tl.col = "black")
+```
+
+```{r}
+# Uji signifikansi korelasi AQI dengan masing-masing variabel polutan
+
+# CO
+cor.test(data_cor$AQI, data_cor$CO, method = "pearson")
+
+# NO2
+cor.test(data_cor$AQI, data_cor$no2, method = "pearson")
+
+# O3
+cor.test(data_cor$AQI, data_cor$o3, method = "pearson")
+
+# PM10
+cor.test(data_cor$AQI, data_cor$pm10, method = "pearson")
+
+# PM2.5
+cor.test(data_cor$AQI, data_cor$pm25, method = "pearson")
+
+# SO2
+cor.test(data_cor$AQI, data_cor$so2, method = "pearson")
+
+```
+
+Berdasarkan hasil eksplorasi data dan uji korelasi, peubah X yang dipilih adalah O3 (Ozone) karena memiliki korelasi paling tinggi terhadap AQI, sebesar 0.974 dan nilai p-value < 0.05.
+
+## Eksplorasi Data
+
+### Cek Kekonsistenan Data
+
+```{r}
+data <- data %>%
+  select("AQI", "o3", "timestamp_local")
+head(data) 
+```
+
+```{r}
+data$time <- ymd_hms(data$timestamp_local)
+```
+
+Terdapat 3 baris yang tidak memiliki format data yang konsisten
+
+```{r}
+which(is.na(ymd_hms(data$timestamp_local)))
+```
+
+```{r}
+data[c(2, 26, 50), ]
+```
+
+```{r}
+data$timestamp_local[c(2, 26, 50)] <- paste0(data$timestamp_local[c(2, 26, 50)], "T00:00:00")
+```
+
+```{r}
+data$time <- ymd_hms(data$timestamp_local)
+```
+
+```{r}
+data[c(2, 26, 50), ]
+```
+
+Baris dengan format data yang tidak konsisten sudah ditangani
+
+### Visualisasi Data
+
+```{r}
+summary(data$AQI)
+summary(data$o3)
+sd(data$AQI, na.rm = TRUE)
+sd(data$o3, na.rm = TRUE)
+```
+
+```{r}
+ggplot(data, aes(x = time)) +
+  geom_line(aes(y = AQI, color = "AQI")) +
+  geom_line(aes(y = o3, color = "O3")) +
+  labs(title = "Tren AQI dan O3 dari waktu ke waktu",
+       x = "Waktu", y = "Nilai",
+       color = "Variabel")
+
+```
+
+```{r}
+ggplot(data, aes(x = AQI)) + geom_histogram(bins = 20, fill = "steelblue", color = "white")
+ggplot(data, aes(x = o3)) + geom_histogram(bins = 20, fill = "orange", color = "white")
+
+```
+
+## Pengecekan Asumsi Autokorelasi dan Asumsi Lainnya
+
+### Regresi
+
+```{r}
+model <- lm(AQI ~ o3, data = data)
+summary(model) 
+```
+
+```{r}
+sisaan  <- resid(model)    # residuals(model)
+fitValue <- fitted(model)  # atau predict(model)
+
+par(mfrow = c(2,2))
+
+# QQ-plot residual
+qqnorm(sisaan); qqline(sisaan, col = "steelblue", lwd = 2)
+
+# Residuals vs Fitted
+plot(fitValue, sisaan, col = "steelblue", pch = 20,
+     xlab = "Fitted values", ylab = "Residuals", main = "Residuals vs Fitted")
+abline(h = 0, lwd = 2)
+
+# Histogram residual
+hist(sisaan, main = "Histogram residuals", xlab = "Residuals", col = "steelblue")
+
+# Residual vs Order (index)
+plot(seq_along(sisaan), sisaan, col = "steelblue", pch = 20,
+     xlab = "Index (time order)", ylab = "Residuals", main = "Residuals vs Order")
+lines(seq_along(sisaan), sisaan, col = "red")
+abline(h = 0, lwd = 2)
+```
+
+```{r}
+#Melihat Sisaan Menyebar Normal/Tidak
+#H0: sisaan mengikuti sebaran normal
+#H1: sisaan tidak mengikuti sebaran normal
+shapiro.test(sisaan)
+```
+
+```{r}
+ks.test(sisaan, "pnorm", mean=mean(sisaan), sd=sd(sisaan))
+```
+
+```{r}
+par(mfrow = c(1,2))
+acf(sisaan, main = "ACF of residuals")
+pacf(sisaan, main = "PACF of residuals")
+```
+
+```{r}
+#Deteksi autokorelasi dengan uji-Durbin Watson
+#H0: tidak ada autokorelasi
+#H1: ada autokorelasi
+dwtest(model)
+```
+
+Berdasarkan uji uji asumsi diatas, terdapat bukti adanya autokorelasi. Didukung juga dengan p-value < 0.05, maka dapat disimpulkan bahwa tolak H0, cukup bukti mengatakan adanya autokorelasi positif kuat. 
+
+## Pembuatan Model Time Series
+
+```{r}
+data <- data[order(data$time), ]   # urutkan berdasarkan waktu
+```
+```{r}
+n <- nrow(data)
+n_train <- floor(0.7 * n)
+
+train_data <- data[1:n_train, ]
+test_data  <- data[(n_train+1):n, ]
+```
+```{r}
+train.ts<-ts(train_data)
+test.ts<-ts(test_data)
+data.ts<-ts(data)
+```
+
+### Model Koyck
+
+```{r}
+#MODEL KOYCK
+model.koyck <- koyckDlm(y = train_data$AQI, x = train_data$o3)
+
+summary(model.koyck)
+```
+
+```{r}
+AIC(model.koyck)
+```
+
+```{r}
+BIC(model.koyck)
+```
+
+Dari hasil diatas terlihat bahwa P-value < 0.05, menunjukan peubah berpengaruh signifikan terhadap y
+
+#### Peramalan dan Akurasi
+
+Berikut adalah hasil peramalan y untuk 5 periode kedepan menggunakan model koyck
+
+```{r}
+fore.koyck <- forecast(model.koyck,
+                       x = test_data$o3,
+                       h = 5)
+fore.koyck
+```
+
+```{r}
+#akurasi data test
+y_pred <- as.numeric(fore.koyck$forecasts)
+
+# Data aktual (test set)
+y_true <- test_data$AQI[1:length(y_pred)]
+
+# Hitung MAPE
+mape_koyck <- mean(abs((y_true - y_pred) / y_true)) * 100
+mape_koyck
+```
+
+
+```{r}
+#akurasi data training
+GoF(model.koyck)
+```
+
+### Regresi Distributed Lag
+
+```{r}
+#MODEL REGRESI DISTRIBUTED LAG
+model.dlm <- dlm(y = train_data$AQI, x = train_data$o3, q =1)
+summary(model.dlm)
+```
+Dari hasil diatas terlihat bahwa P-value < 0.05, menunjukan peubah berpengaruh signifikan terhadap y
+
+#### Peramalan dan Akurasi
+
+Berikut adalah hasil peramalan y untuk 5 periode kedepan menggunakan model dlm
+
+```{r}
+fore.dlm <- forecast(model.dlm,
+                       x = test_data$o3,
+                       h = 5)
+fore.dlm
+```
+
+```{r}
+#akurasi data test
+y_pred <- as.numeric(fore.dlm$forecasts)
+
+# Data aktual (test set)
+y_true <- test_data$AQI[1:length(y_pred)]
+
+# Hitung MAPE
+mape_dlm <- mean(abs((y_true - y_pred) / y_true)) * 100
+mape_dlm
+```
+
+```{r}
+#akurasi data training
+GoF(model.dlm)
+```
+
+#### Lag Optimum
+
+```{r}
+#penentuan lag optimum 
+finiteDLMauto(formula = AQI ~ o3,
+              data = data.frame(train_data), q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+```
+
+```{r}
+#model dlm dengan lag optimum
+model.dlm2 <- dlm(x = train_data$o3,y = train_data$AQI , q = 9)
+summary(model.dlm2)
+```
+
+```{r}
+fore.dlm2 <- forecast(model.dlm2,
+                       x = test_data$o3,
+                       h = 5)
+fore.dlm2
+```
+
+```{r}
+#akurasi data test
+y_pred <- as.numeric(fore.dlm2$forecasts)
+
+# Data aktual (test set)
+y_true <- test_data$AQI[1:length(y_pred)]
+
+# Hitung MAPE
+mape_dlm2 <- mean(abs((y_true - y_pred) / y_true)) * 100
+mape_dlm2
+```
+
+```{r}
+#akurasi data training
+GoF(model.dlm2)
+```
+
+### Model Autoregressive
+
+```{r}
+#MODEL AUTOREGRESSIVE
+model.ardl <- ardlDlm(y = train_data$AQI, x = train_data$o3, p = 1 , q = 1)
+summary(model.ardl)
+```
+
+```{r}
+AIC(model.ardl)
+```
+
+```{r}
+BIC(model.ardl)
+```
+
+```{r}
+model.ardl <- ardlDlm(formula = AQI ~ o3, 
+                         data = train_data,p = 1 , q = 1)
+summary(model.ardl)
+```
+
+```{r}
+AIC(model.ardl)
+```
+
+```{r}
+BIC(model.ardl)
+```
+
+#### Peramalan dan Akurasi
+
+
+```{r}
+fore.ardl <- forecast(model.ardl,
+                       x = test_data$o3,
+                       h = 5)
+fore.ardl
+```
+
+```{r}
+#akurasi data test
+y_pred <- as.numeric(fore.ardl$forecasts)
+
+# Data aktual (test set)
+y_true <- test_data$AQI[1:length(y_pred)]
+
+# Hitung MAPE
+mape_ardl<- mean(abs((y_true - y_pred) / y_true)) * 100
+mape_ardl
+```
+
+```{r}
+#akurasi data training
+GoF(model.ardl)
+```
+
+### Pemodelan DLM & ARDL dengan Library dynlm
+
+```{r}
+library(dynlm)
+
+# sama dengan model DLM q=1
+cons_lm1 <- dynlm(AQI ~ o3 + L(o3), data = train.ts)
+
+# sama dengan model ARDL p=1 q=0
+cons_lm2 <- dynlm(AQI ~ o3 + L(AQI), data = train.ts)
+
+# sama dengan ARDL p=1 q=1
+cons_lm3 <- dynlm(AQI ~ o3 + L(o3) + L(AQI), data = train.ts)
+
+# sama dengan DLM q=2
+cons_lm4 <- dynlm(AQI ~ o3 + L(o3) + L(o3, 2), data = train.ts)
+
+```
+
+#### Ringkasan Model
+
+```{r}
+summary(cons_lm1)
+```
+
+```{r}
+summary(cons_lm2)
+```
+
+```{r}
+summary(cons_lm3)
+```
+
+```{r}
+summary(cons_lm4)
+```
+
+#### SSE
+
+```{r}
+deviance(cons_lm1)
+deviance(cons_lm2)
+deviance(cons_lm3)
+deviance(cons_lm4)
+```
+
+Semakin kecil nilai SSE, berarti model lebih baik dalam menyesuaikan data (karena error lebih kecil).
+
+#### Ui encomptest
+
+langkah selanjutnya adalah membandingkan kinerja antar model. selanjutnya adalah membandingkan kinerja antar model. Salah satu pendekatan yang dapat digunakan adalah encompassing test dengan fungsi encomptest() dari package lmtest.
+
+```{r}
+#uji model
+if(require("lmtest")) encomptest(cons_lm1, cons_lm2)
+```
+
+```{r}
+#Uji Autokorelasi Residual
+#durbin watson
+dwtest(cons_lm1)
+dwtest(cons_lm2)
+dwtest(cons_lm3)
+dwtest(cons_lm4)
+```
+
+```{r}
+#Uji Heterogenitas
+bptest(cons_lm1)
+bptest(cons_lm2)
+bptest(cons_lm3)
+bptest(cons_lm4)
+```
+
+```{r}
+#Uji Normalitas
+shapiro.test(residuals(cons_lm1))
+shapiro.test(residuals(cons_lm2))
+shapiro.test(residuals(cons_lm3))
+shapiro.test(residuals(cons_lm4))
+```
+
+```{r}
+# Perbandingan Model
+akurasi <- matrix(c(mape_koyck, mape_dlm, mape_dlm2, mape_ardl))
+row.names(akurasi)<- c("Koyck","DLM 1","DLM 2","Autoregressive")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+
+Berdasarkan nilai MAPE, model paling optimum didapat pada Model Autoregressive karena memiliki nilai MAPE yang terkecil.
+
+```{r}
+
+```
+
