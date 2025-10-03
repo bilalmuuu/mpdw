@@ -1,0 +1,212 @@
+---
+title: "Tugas Praktikum 5"
+author: "Bilal Muhammad Thalib (G1401231093)"
+date: "2025-10-03"
+output: html_document
+---
+
+
+# Library
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(readxl)
+```
+
+# Data
+
+```{r}
+# Baca file Excel
+df <- read_excel("C:/Documents/Bilal/Kuliah/MPDW/Page Loads.xlsx")
+
+# Ambil baris 401 - 500
+df_subset <- df[401:500, ]
+head(df_subset)
+```
+
+
+```{r}
+# Ubah ke Time Series
+clicks <- ts(df_subset$Page.Loads)
+```
+
+```{r}
+# Periksa Grafik TS
+plot(clicks, main="Plot Data Asli", col="blue", ylab="Jumlah Click", xlab="Waktu")
+```
+
+Berdasarkan Plot Data diatas terlihat bahwa terdapat fluktuasi naik-turun yang terlihat cukup berbeda pada rentang waktu tertentu, seperti ada siklus 'Seasonality'. Oleh karena itu, dapat diindikasikan terlebih dahulu bahwa data belum stasioner.
+
+# Pengecekan Stasioneritas
+
+## Uji ACF dan PACF untuk pola autokorelasi
+
+```{r}
+acf(clicks, main="ACF Data Asli")
+pacf(clicks, main="PACF Data Asli")
+```
+
+Berdasarkan plot ACF diatas, data belum stasioner karena masih ada autokorelasi yang kuat di banyak lag dan menurun secara perlahan (Slow Decay), bukan langsung memotong (cut-off). Oleh karena itu, diperlukan differencing terhadap data yang digunakan.
+
+## Differencing
+
+```{r}
+clicks_diff <- diff(clicks)
+plot(clicks_diff, main="Plot Data Setelah Differencing", col="red", ylab="Jumlah Click", xlab="Waktu")
+acf(clicks_diff, main="ACF Data Setelah Differencing")
+pacf(clicks_diff, main="PACF Data Setelah Differencing")
+```
+
+Setelah differencing, plot ACF menunjukkan tails-off cepat, tidak gradual seperti sebelumnya. Ini mendukung bahwa data sudah stasioner setelah differencing. Sedangkan plot PACF  menunjukkan cut-off, yang merupakan indikasi kuat bahwa data stasioner setelah differencing.
+
+## Uji ADF
+
+```{r}
+adf.test(clicks)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Karena p-value \> 0.05, maka gagal menolak H0 yang artinya terdapat ketidakstasioneran pada data.
+
+```{r}
+adf.test(clicks_diff)
+```
+
+
+## Plot Box-Cox
+
+```{r}
+index = seq(401:500)
+
+# Box-Cox
+b <- boxcox(
+  clicks ~ index,
+  lambda = seq(-1, 4, by = 0.01)
+)
+#Nilai Rounded Lambda
+lambda = b$x[which.max(b$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- b$x[b$y > max(b$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+
+Plot di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-1.03** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.57** dan batas atas **1.53**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data stasioner dalam ragam.
+
+
+# Partisi Data
+
+## Train Data
+```{r}
+train_size = floor(0.8 * length(clicks))
+train_data = clicks[1:train_size]
+print(train_data)
+mean(train_data)
+var(train_data)
+```
+### Plot Time Series Train Data
+```{r}
+plot.ts(train_data, main = "Train Data Jumlah Clicks", ylab = "Jumlah Clicks", xlab = "Waktu", col = "blue")
+```
+### ACF Train Data
+```{r}
+acf(train_data, main = "ACF")
+```
+Dari plot di atas menunjukkan bahwa data tidak stasioner karena nilai ACF menurun secara perlahan.
+
+### Uji ADF Train Data
+```{r}
+adf.test(train_data)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+$H_1$ : Data stasioner dalam rataan
+
+Karena p-value \> 0.05, maka gagal menolak H0 yang artinya terdapat ketidakstasioneran pada data.
+
+### Box-Cox Train Data
+```{r}
+idx = seq(401:480)
+
+# Box-Cox
+b <- boxcox(
+  train_data ~ idx,
+  lambda = seq(-1, 4, by = 0.01)
+)
+#Nilai Rounded Lambda
+lambda = b$x[which.max(b$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- b$x[b$y > max(b$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+
+```
+Plot di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **0.98** dan pada selang kepercayaan 95% nilai memiliki batas bawah **0.47** dan batas atas **1.54**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data stasioner dalam ragam.
+
+### Test Data
+```{r}
+test_data = clicks[(train_size + 1):length(clicks)]
+print(test_data)
+mean(test_data)
+var(test_data)
+```
+### Plot Time Series Test Data
+```{r}
+ts.plot(test_data, main = "Test Data Jumlah Clicks", ylab = "Jumlah Clicks", xlab = "Waktu", col = "blue")
+```
+### ACF Test Data
+```{r}
+acf(test_data, main = "ACF")
+```
+Dari plot di atas menunjukkan bahwa data tidak stasioner karena nilai ACF menurun secara perlahan.
+
+### Uji ADF Test Data
+```{r}
+adf.test(test_data)
+```
+$H_0$ : Data tidak stasioner dalam rataan
+$H_1$ : Data stasioner dalam rataan
+
+Karena p-value \> 0.05, maka gagal menolak H0 yang artinya terdapat ketidakstasioneran pada data.
+
+### Box-Cox Test Data
+```{r}
+idy = seq(481:500)
+
+# Box-Cox
+b <- boxcox(
+  test_data ~ idy,
+  lambda = seq(-1, 4, by = 0.01)
+)
+#Nilai Rounded Lambda
+lambda = b$x[which.max(b$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- b$x[b$y > max(b$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+
+Plot di atas menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **1.91** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-0.24** dan batas atas **4.00**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data stasioner dalam ragam.
